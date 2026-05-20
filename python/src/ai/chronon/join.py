@@ -290,6 +290,7 @@ def Join(
     step_days: int = None,
     enable_stats_compute: bool = None,
     modular_execution: bool = False,
+    environments: Optional[List[str]] = None,
 ) -> api.Join:
     """
     Construct a join object. A join can pull together data from various GroupBy's both offline and online. This is also
@@ -397,10 +398,21 @@ def Join(
         When True, uses modular join planning (JoinPlanner) instead of the default
         monolith planner (MonolithJoinPlanner).
     :type modular_execution: bool
+    :param environments:
+        List of environments where this join should be deployed/available.
+        Defaults to ['prod']. Valid values: 'prod', 'canary' (case-insensitive).
+    :type environments: List[str]
     """
     # Normalize row_ids
     if isinstance(row_ids, str):
         row_ids = [row_ids]
+
+    # `environments` is left unset (None) when the author doesn't specify it.
+    # Downstream consumers (e.g. hub schedule-all) default the missing/empty
+    # case to ['prod']. Keeping it unset on disk avoids baking a default into
+    # every compiled conf.
+    if environments:
+        environments = utils.convert_environments_to_enum(environments)
 
     assert version is None or isinstance(version, int), (
         f"Version must be an integer or None, but found {type(version).__name__}"
@@ -491,6 +503,7 @@ def Join(
         consistencySamplePercent=consistency_sample_percent,
         executionInfo=exec_info,
         version=str(version) if version is not None else None,
+        environments=environments,
     )
 
     join = api.Join(

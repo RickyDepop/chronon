@@ -17,6 +17,7 @@ from ai.chronon.cli.formatter import (
 )
 from ai.chronon.cli.git_utils import get_current_branch
 from ai.chronon.cli.theme import (
+    console,
     print_error,
     print_info,
     print_key_value,
@@ -30,10 +31,25 @@ from ai.chronon.repo.auth import get_user_email
 from ai.chronon.repo.constants import VALID_CLOUDS, RunMode
 from ai.chronon.repo.utils import print_possible_confs, upload_to_blob_store
 from ai.chronon.repo.zipline_hub import ZiplineHub
-from gen_thrift.api.ttypes import DataKind
+from gen_thrift.api.ttypes import DataKind, Environment
 from gen_thrift.planner.ttypes import Mode
 
 logger = logging.getLogger(__name__)
+
+
+def _env_string_to_enum(env_str: str) -> int:
+    """Convert environment string to enum value.
+
+    The local compile system supports arbitrary `teams.<env>.py` files, but the
+    hub wire protocol still only understands the Thrift `Environment` enum
+    (PROD/CANARY). Adding a new env that can round-trip through the hub means
+    extending `thrift/api.thrift:Environment` + the hub server + this map +
+    the `click.Choice` lists below in lockstep."""
+    env_map = {
+        'prod': Environment.PROD,
+        'canary': Environment.CANARY,
+    }
+    return env_map.get(env_str.lower(), Environment.PROD)
 
 
 def _validate_at_most_daily_schedule(schedule_expression: str) -> Optional[str]:
@@ -95,7 +111,43 @@ def _resolve_data_type_kinds(obj):
     return obj
 
 
-DEFAULT_TEAM_METADATA_CONF = "compiled/teams_metadata/default/default_team_metadata"
+def team_metadata_conf(team: str = "default", env: str = 'prod') -> str:
+    """Path to a team's compiled metadata thriftjson, scoped to the compile
+    output folder selected by `env`. Mirrors the per-env layout produced by
+    `zipline compile`: `prod` → `compiled/`, any other <env> → `compiled_<env>/`
+    (matching teams.<env>.py). Empty / falsy env defaults to prod."""
+    e = (env or "prod").lower()
+    folder = "compiled" if e == "prod" else f"compiled_{e}"
+    return f"{folder}/teams_metadata/{team}/{team}_team_metadata"
+
+
+def default_team_metadata_conf(env: str = 'prod') -> str:
+    return team_metadata_conf("default", env)
+
+
+def _env_from_conf_path(conf: str) -> str:
+    """Infer the compile env from a conf path. A path under `compiled/` targets
+    prod; a path under `compiled_<env>/` targets `<env>`. Lets conf-path-taking
+    commands stay env-aware without making the user pass an explicit `--env`
+    flag that has to agree with the path they typed."""
+    for part in os.path.normpath(conf).split(os.sep):
+        if part == "compiled":
+            return "prod"
+        if part.startswith("compiled_"):
+            return part[len("compiled_"):]
+    return "prod"
+
+
+def print_env_banner(env: str, format: Format = Format.TEXT) -> None:
+    """Loudly announce which compile environment a CLI command is targeting.
+    Suppressed in JSON mode so stdout stays machine-readable."""
+    if format == Format.JSON:
+        return
+    e = (env or "prod").lower()
+    if e == "prod":
+        console.rule("[bold magenta]🚀 RUNNING AGAINST PROD ENVIRONMENT[/]")
+    else:
+        console.rule(f"[bold cyan]🐤 RUNNING AGAINST {e.upper()} ENVIRONMENT[/]")
 
 
 @dataclass
@@ -188,20 +240,39 @@ def customer_id_option(func):
         default=None,
     )(func)
 
+def env_option(func):
+    return click.option(
+        "--env",
+        help="Environment to run against",
+        type=click.Choice(['prod', 'canary'], case_sensitive=False),
+        default='prod',
+        show_default=True,
+    )(func)
+
+
+_CONF_FOLDER_TO_HUB_TYPE = {
+    "joins": "joins",
+    "staging_queries": "stagingqueries",
+    "group_bys": "groupbys",
+    "models": "models",
+    "model_transforms": "modeltransforms",
+}
+
 
 def get_conf_type(conf):
-    if "compiled/joins" in conf:
-        return "joins"
-    elif "compiled/staging_queries" in conf:
-        return "stagingqueries"
-    elif "compiled/group_by" in conf:
-        return "groupbys"
-    elif "compiled/models" in conf:
-        return "models"
-    elif "compiled/model_transforms" in conf:
-        return "modeltransforms"
-    else:
-        raise ValueError(f"Unsupported conf type: {conf}")
+    """Infer the hub conf-type from a conf path under any env's output dir.
+    Mirrors `_env_from_conf_path` in walking path components so both
+    `compiled/joins/...` (prod) and `compiled_<env>/joins/...` (canary etc.)
+    resolve to the same hub conf-type."""
+    parts = os.path.normpath(conf).split(os.sep)
+    for i, part in enumerate(parts):
+        if part == "compiled" or part.startswith("compiled_"):
+            if i + 1 < len(parts):
+                folder = parts[i + 1]
+                if folder in _CONF_FOLDER_TO_HUB_TYPE:
+                    return _CONF_FOLDER_TO_HUB_TYPE[folder]
+            break
+    raise ValueError(f"Unsupported conf type: {conf}")
 
 
 #### Common click options
@@ -342,11 +413,24 @@ def redeploy_streaming(repo, confs, hub_url=None, use_auth=True, format: Format 
         raise ValueError(
             f"All confs must target the same Hub, but found multiple hub_url values:\n{mismatches}"
         )
+
+    # All confs in a single redeploy must come from the same compile env
+    # (mixing envs in one call would hash against the wrong folder for some).
+    conf_envs = [_env_from_conf_path(c) for c in confs]
+    if len(set(conf_envs)) > 1:
+        mismatches = "\n".join(
+            f"  {conf}: {env}" for conf, env in zip(confs, conf_envs, strict=True)
+        )
+        raise ValueError(
+            f"All confs must come from the same compile environment, but found a mix:\n{mismatches}"
+        )
+    env = conf_envs[0] if conf_envs else "prod"
+
     hub_conf = hub_confs[0]
     zipline_hub = _get_zipline_hub(hub_url, hub_conf, use_auth, format)
 
     with status_spinner("Computing local conf hashes...", format=format):
-        conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
+        conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo, env=env)
     branch = get_current_branch()
     with status_spinner("Syncing confs with Hub...", format=format):
         hub_uploader.compute_and_upload_diffs(
@@ -380,13 +464,13 @@ def redeploy_streaming(repo, confs, hub_url=None, use_auth=True, format: Format 
 
 
 def submit_schedule_all(
-    repo, cloud, customer_id, hub_url=None, use_auth=True, format: Format = Format.TEXT
+    repo, cloud, customer_id, env='prod', hub_url=None, use_auth=True, format: Format = Format.TEXT
 ):
     """Deploy schedules for all confs that have schedules defined."""
     zipline_hub = _get_zipline_hub(
         hub_url,
         get_hub_conf_from_metadata_conf(
-            DEFAULT_TEAM_METADATA_CONF,
+            default_team_metadata_conf(env),
             root_dir=repo,
             cloud_provider=cloud,
             customer_id=customer_id,
@@ -396,7 +480,7 @@ def submit_schedule_all(
     )
 
     with status_spinner("Computing local conf hashes...", format=format):
-        conf_name_to_obj_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
+        conf_name_to_obj_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo, env=env)
 
     branch = get_current_branch()
 
@@ -412,9 +496,25 @@ def submit_schedule_all(
     # Collect confs with schedules (from ALL confs, not just changed ones)
     confs_with_schedules = []
     skipped_confs = []
+    env_filtered_confs = []
+
+    # Convert env string to enum value for comparison
+    env_enum = _env_string_to_enum(env)
 
     for name, conf in conf_name_to_obj_dict.items():
         try:
+            # Check if conf's environments field includes the specified env.
+            # Authoring leaves the field unset when the user doesn't specify
+            # `environments=` — treat missing / null / empty as prod-only so a
+            # legacy conf with no env tag still deploys under --env prod.
+            metadata_map = get_metadata_map(conf.localPath)
+            conf_environments = metadata_map.get("environments") or [Environment.PROD]
+
+            # Skip confs that don't match the specified environment
+            if env_enum not in conf_environments:
+                env_filtered_confs.append(name)
+                continue
+
             schedule_modes = get_schedule_modes(conf.localPath)
 
             # Skip confs without any schedules
@@ -443,11 +543,18 @@ def submit_schedule_all(
             skipped_confs.append(name)
 
     if not confs_with_schedules:
-        print_info(
-            f"No confs with schedules found. "
-            f"{len(skipped_confs)} conf(s) have no schedules defined.",
-            format=format,
-        )
+        message_parts = [
+            f"No confs with schedules found among loaded confs for environment '{env}'."
+        ]
+        if env_filtered_confs:
+            message_parts.append(
+                f"{len(env_filtered_confs)} conf(s) filtered out due to environment mismatch."
+            )
+        if skipped_confs:
+            message_parts.append(
+                f"{len(skipped_confs)} loaded conf(s) have no schedules defined."
+            )
+        print_info(" ".join(message_parts), format=format)
         return
 
     # Deploy schedules via batch API
@@ -505,13 +612,21 @@ def submit_schedule_all(
                     f"  ✓ {conf_name}", ", ".join(schedule_info), format=format
                 )
 
-    if skipped_confs:
-        print_info(
-            f"\n{len(skipped_confs)} conf(s) skipped (no schedules defined): "
-            f"{', '.join(skipped_confs[:5])}"
-            f"{'...' if len(skipped_confs) > 5 else ''}",
-            format=format,
+    info_parts = []
+    if env_filtered_confs:
+        info_parts.append(
+            f"{len(env_filtered_confs)} conf(s) skipped (environment mismatch): "
+            f"{', '.join(env_filtered_confs[:5])}"
+            f"{'...' if len(env_filtered_confs) > 5 else ''}"
         )
+    if skipped_confs:
+        info_parts.append(
+            f"{len(skipped_confs)} conf(s) skipped (no schedules defined): "
+            f"{', '.join(skipped_confs[:5])}"
+            f"{'...' if len(skipped_confs) > 5 else ''}"
+        )
+    if info_parts:
+        print_info("\n" + "\n".join(info_parts), format=format)
 
 
 def submit_workflow(
@@ -529,7 +644,9 @@ def submit_workflow(
     zipline_hub = _get_zipline_hub(hub_url, hub_conf, use_auth, format)
 
     with status_spinner("Computing local conf hashes...", format=format):
-        conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
+        conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(
+            root_dir=repo, env=_env_from_conf_path(conf)
+        )
     branch = get_current_branch()
 
     with status_spinner("Syncing confs with Hub...", format=format):
@@ -583,7 +700,9 @@ def submit_schedule(
     zipline_hub = _get_zipline_hub(hub_url, hub_conf, use_auth, format)
 
     with status_spinner("Computing local conf hashes...", format=format):
-        conf_name_to_obj_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
+        conf_name_to_obj_dict = hub_uploader.build_local_repo_hashmap(
+            root_dir=repo, env=_env_from_conf_path(conf)
+        )
     branch = get_current_branch()
 
     with status_spinner("Syncing confs with Hub...", format=format):
@@ -732,17 +851,21 @@ def schedule(
 @jsonify_exceptions_if_json_format
 @cloud_provider_option
 @customer_id_option
+@env_option
 @handle_dry_run_compile
 def schedule_all(
     repo,
     cloud,
     customer_id,
+    env,
     hub_url=None,
     use_auth=True,
     format: Format = Format.TEXT,
     compile_pending_changes=None,
 ):
     """Deploy recurring schedules for all changed confs that have schedules defined."""
+
+    print_env_banner(env, format=format)
 
     if compile_pending_changes:
         # Check if there are any changes
@@ -777,7 +900,7 @@ def schedule_all(
         print_success("No compilation changes detected.", format=format)
 
     submit_schedule_all(
-        repo, cloud, customer_id, hub_url=hub_url, use_auth=use_auth, format=format
+        repo, cloud, customer_id, env=env, hub_url=hub_url, use_auth=use_auth, format=format
     )
 
 
@@ -790,15 +913,17 @@ def schedule_all(
 @jsonify_exceptions_if_json_format
 @cloud_provider_option
 @customer_id_option
-def cancel(workflow_id, repo, hub_url, use_auth, format, cloud, customer_id):
+@env_option
+def cancel(workflow_id, repo, hub_url, use_auth, format, cloud, customer_id, env):
     """Cancel a running workflow.
 
     WORKFLOW_ID is the ID of the workflow to cancel.
     """
+    print_env_banner(env, format=format)
     zipline_hub = _get_zipline_hub(
         hub_url,
         get_hub_conf_from_metadata_conf(
-            DEFAULT_TEAM_METADATA_CONF,
+            default_team_metadata_conf(env),
             root_dir=repo,
             cloud_provider=cloud,
             customer_id=customer_id,
@@ -1061,7 +1186,9 @@ def eval(
         format=format,
         auth_url=hub_conf.frontend_url,
     )
-    conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
+    conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(
+        root_dir=repo, env=_env_from_conf_path(conf)
+    )
     branch = get_current_branch()
     if test_data_path:
         # Upload the test data skeleton to the bucket.
@@ -1135,14 +1262,16 @@ def eval(
     default="SPARK",
     show_default=True,
 )
+@env_option
 @jsonify_exceptions_if_json_format
 def eval_table(
-    table, repo, conf, team, hub_url, use_auth, format, eval_url, engine_type
+    table, repo, conf, team, hub_url, use_auth, format, eval_url, engine_type, env
 ):
     """Validate a table's schema.
 
     TABLE is the table name for schema evaluation (e.g. data.loggable_response).
     """
+    print_env_banner(env, format=format)
     # Use conf for executionInfo if provided (highest priority)
     conf_execution_info, team_execution_info, default_execution_info = None, None, None
     team = team or os.environ.get("TEAM")
@@ -1151,13 +1280,12 @@ def eval_table(
         conf_execution_info = get_metadata_map(file_path).get("executionInfo")
     # Otherwise use team metadata if specified
     elif team:
-        team_metadata_path = f"compiled/teams_metadata/{team}/{team}_team_metadata"
-        file_path = os.path.join(repo, team_metadata_path)
+        file_path = os.path.join(repo, team_metadata_conf(team, env))
         with open(file_path, "r") as f:
             team_execution_info = json.load(f).get("executionInfo")
     # Otherwise use default team metadata
     else:
-        file_path = os.path.join(repo, DEFAULT_TEAM_METADATA_CONF)
+        file_path = os.path.join(repo, default_team_metadata_conf(env))
         with open(file_path, "r") as f:
             default_execution_info = json.load(f).get("executionInfo")
     execution_info = (
@@ -1235,21 +1363,22 @@ def eval_table(
     default="SPARK",
     show_default=True,
 )
+@env_option
 @jsonify_exceptions_if_json_format
-def list_tables(schema_name, repo, team, hub_url, use_auth, format, eval_url, engine_type):
+def list_tables(schema_name, repo, team, hub_url, use_auth, format, eval_url, engine_type, env):
     """List tables in a schema.
 
     SCHEMA_NAME is the schema/database to list tables from (e.g. demo).
     """
+    print_env_banner(env, format=format)
     team_execution_info, default_execution_info = None, None
     team = team or os.environ.get("TEAM")
     if team:
-        team_metadata_path = f"compiled/teams_metadata/{team}/{team}_team_metadata"
-        file_path = os.path.join(repo, team_metadata_path)
+        file_path = os.path.join(repo, team_metadata_conf(team, env))
         with open(file_path, "r") as f:
             team_execution_info = json.load(f).get("executionInfo")
     else:
-        file_path = os.path.join(repo, DEFAULT_TEAM_METADATA_CONF)
+        file_path = os.path.join(repo, default_team_metadata_conf(env))
         with open(file_path, "r") as f:
             default_execution_info = json.load(f).get("executionInfo")
     execution_info = team_execution_info or default_execution_info
