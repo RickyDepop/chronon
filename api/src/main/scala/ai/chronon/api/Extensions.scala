@@ -445,11 +445,22 @@ object Extensions {
       else { source.getJoinSource.getJoin.finalOutputTable }
     }
 
-    def mutationsTable: Option[String] = for (
-      entities <- Option(source.getEntities);
-      mutationsTable <- Option(entities.getMutationTable)
-    ) yield {
-      mutationsTable
+    def mutationsTable: Option[String] = {
+      def mutationsTableFor(current: Source): Option[String] = {
+        if (current == null) None
+        else if (current.isSetEntities) {
+          Option(current.getEntities.getMutationTable)
+        } else if (current.isSetJoinSource) {
+          // JoinSource is a union arm, so recurse through left-side joins before reading EntitySource fields.
+          Option(current.getJoinSource)
+            .flatMap(joinSource => Option(joinSource.getJoin))
+            .flatMap(join => mutationsTableFor(join.getLeft))
+        } else {
+          None
+        }
+      }
+
+      mutationsTableFor(source)
     }
 
     def overwriteTable(table: String): Unit = {
