@@ -28,8 +28,16 @@ trait CloudAwsModule extends Cross.Module[String] with build.BaseModule {
   def ucClientJarFile = Task.Source(moduleDir / "unitycatalog-client-0.4.0.jar")
   def ucHadoopJarFile = Task.Source(moduleDir / "unitycatalog-hadoop-0.4.0.jar")
 
+  // Patched delta-spark, built from zipline-ai/delta@v3.3.2-spark-3.5.3 (upstream
+  // v3.3.2 + checkpoint stats_parsed and partial-stats AND-predicate backports).
+  // Same jar bundled into the EMR Serverless custom image (docker/emr-serverless/);
+  // shipping it here too puts Delta on the classpath for runtimes that submit the
+  // cloud_aws assembly directly (e.g. Crucible Spark-on-K8s), which have no custom
+  // image to carry it.
+  def deltaSparkJarFile = Task.Source(moduleDir / "delta-spark_2.12-3.3.2.jar")
+
   override def unmanagedClasspath = Task {
-    super.unmanagedClasspath() ++ Seq(ucSparkJarFile(), ucClientJarFile(), ucHadoopJarFile())
+    super.unmanagedClasspath() ++ Seq(ucSparkJarFile(), ucClientJarFile(), ucHadoopJarFile(), deltaSparkJarFile())
   }
 
   def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingApiDeps ++ build.Constants.utilityDeps  ++ Seq(
@@ -51,6 +59,11 @@ trait CloudAwsModule extends Cross.Module[String] with build.BaseModule {
     mvn"software.amazon.msk:aws-msk-iam-auth:2.3.5",
     mvn"org.apache.hadoop:hadoop-client-api:3.4.1",
     mvn"org.apache.iceberg::iceberg-spark-runtime-3.5:1.10.0",
+    // delta-storage is delta-spark's runtime LogStore layer — a separate,
+    // unpatched artifact. The bundled delta-spark jar (deltaSparkJarFile) is
+    // only the Spark module; without this it fails NoClassDefFoundError:
+    // io/delta/storage/LogStore. Version must match the bundled delta-spark.
+    mvn"io.delta:delta-storage:3.3.2",
     // Transitive deps that the old `io.unitycatalog:unitycatalog-client:0.4.0`
     // Maven artifact provided. We now bundle the client jar locally (see
     // ucClientJarFile above), so these have to be declared explicitly.
