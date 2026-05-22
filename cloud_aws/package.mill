@@ -63,7 +63,7 @@ trait CloudAwsModule extends Cross.Module[String] with build.BaseModule {
     mvn"org.eclipse.jetty:jetty-server:$jettyVersion",
     mvn"org.eclipse.jetty:jetty-http:$jettyVersion",
     mvn"com.nimbusds:nimbus-jose-jwt:$nimbusJoseJwtVersion",
-    mvn"org.apache.commons:commons-configuration2:2.10.1",
+    mvn"org.apache.commons:commons-configuration2:2.15.0",
     mvn"org.apache.commons:commons-compress:1.26.0",
     mvn"dnsjava:dnsjava:3.6.0",
     mvn"commons-beanutils:commons-beanutils:1.11.0",
