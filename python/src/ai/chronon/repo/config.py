@@ -15,6 +15,7 @@ from rich.table import Table
 
 import ai.chronon.cli.compile.parse_teams as parse_teams
 from ai.chronon.cli.formatter import Format, jsonify_exceptions_if_json_format
+from ai.chronon.cli.options import chronon_root_option, env_option, format_option
 from ai.chronon.cli.theme import console
 from gen_thrift.api.ttypes import MetaData, Team
 
@@ -303,28 +304,13 @@ _conf_option = click.option(
         "When set, values come from the conf's merged executionInfo."
     ),
 )
-_chronon_root_option = click.option(
-    "--chronon-root",
-    default=None,
-    envvar="CHRONON_ROOT",
+_chronon_root_option = chronon_root_option(
     help="Path to the Chronon root (containing teams.py). Auto-discovered if omitted.",
 )
-_env_option = click.option(
-    "--env",
-    default="prod",
-    type=click.Choice(["prod", "canary"], case_sensitive=False),
-    show_default=True,
+_env_option = env_option(
     help="Which teams file to inspect: 'prod' (teams.py) or 'canary' (teams.canary.py).",
 )
-_format_option = click.option(
-    "-f",
-    "--format",
-    "format",
-    default=Format.TEXT,
-    type=click.Choice(Format, case_sensitive=False),
-    show_default=True,
-    help="Output format.",
-)
+_format_option = format_option()
 
 
 @click.group(name="config", help="Inspect values defined in the nearest teams.py.")

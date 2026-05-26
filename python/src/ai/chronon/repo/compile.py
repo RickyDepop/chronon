@@ -8,31 +8,20 @@ from ai.chronon.cli.compile.compile_context import CompileContext
 from ai.chronon.cli.compile.compiler import Compiler
 from ai.chronon.cli.compile.parse_teams import PROD_ENV, discover_compile_envs
 from ai.chronon.cli.formatter import Format, jsonify_exceptions_if_json_format
+from ai.chronon.cli.options import chronon_root_option, format_option
 from ai.chronon.cli.theme import STYLE_INFO, console
 from gen_thrift.api.ttypes import ConfType
 
 
 @click.command(name="compile")
-@click.option(
-    "--chronon-root",
-    default=None,
-    envvar="CHRONON_ROOT",
-    help="Path to the root Chronon folder.",
-)
+@chronon_root_option(help="Path to the root Chronon folder.")
 @click.option(
     "--ignore-python-errors",
     is_flag=True,
     default=False,
     help="Allow compilation to proceed even with Python errors (useful for testing)",
 )
-@click.option(
-    "-f",
-    "--format",
-    help="Output format.",
-    default=Format.TEXT,
-    type=click.Choice(Format, case_sensitive=False),
-    show_default=True,
-)
+@format_option()
 @click.option(
     "--force",
     is_flag=True,

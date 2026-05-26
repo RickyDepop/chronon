@@ -14,6 +14,7 @@ import urllib.request
 import boto3
 import click
 
+from ai.chronon.cli.options import chronon_root_option
 from ai.chronon.cli.theme import console
 from ai.chronon.logger import get_logger
 from ai.chronon.repo.aws import (
@@ -1099,10 +1100,7 @@ def _poll_until_terminal(app_id, job_run_id, region, poll_interval=15, max_attem
     default=None,
     help="Zipline version to use. Defaults to VERSION from teams.py or env var.",
 )
-@click.option(
-    "--chronon-root",
-    default=None,
-    envvar="CHRONON_ROOT",
+@chronon_root_option(
     help="Path to the Chronon root (containing teams.py). Auto-discovered if omitted.",
 )
 @click.option(

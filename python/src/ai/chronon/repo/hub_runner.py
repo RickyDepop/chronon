@@ -10,6 +10,7 @@ from typing import Optional
 import click
 import requests
 
+from ai.chronon.cli import options as cli_options
 from ai.chronon.cli.formatter import (
     Format,
     format_print,
@@ -176,78 +177,14 @@ def hub():
     pass
 
 
-def repo_option(func):
-    return click.option(
-        "-r",
-        "--repo",
-        help="Path to the Chronon repo root.",
-        default=".",
-        show_default=True,
-    )(func)
-
-
-def use_auth_option(func):
-    return click.option(
-        "--use-auth/--no-use-auth",
-        help="Use authentication when connecting to Zipline Hub",
-        default=True,
-    )(func)
-
-
-def hub_url_option(func):
-    return click.option(
-        "--hub-url",
-        help="Zipline Hub address, e.g. http://localhost:3903",
-        default=None,
-    )(func)
-
-
-def format_option(func):
-    return click.option(
-        "-f",
-        "--format",
-        help="Output format.",
-        default=Format.TEXT,
-        type=click.Choice(Format, case_sensitive=False),
-        show_default=True,
-    )(func)
-
-
-def force_option(func):
-    return click.option(
-        "--force",
-        help="Force compile even if there are version changes to existing confs",
-        is_flag=True,
-    )(func)
-
-
-def cloud_provider_option(func):
-    return click.option(
-        "--cloud",
-        help="Cloud provider for the hub and related services",
-        type=click.Choice(VALID_CLOUDS, case_sensitive=False),
-        required=False,
-        default=None,
-    )(func)
-
-
-def customer_id_option(func):
-    return click.option(
-        "--customer-id",
-        help="Customer ID for authentication. Required for Azure.",
-        type=str,
-        required=False,
-        default=None,
-    )(func)
-
-def env_option(func):
-    return click.option(
-        "--env",
-        help="Environment to run against",
-        type=click.Choice(['prod', 'canary'], case_sensitive=False),
-        default='prod',
-        show_default=True,
-    )(func)
+repo_option = cli_options.repo_root_option()
+use_auth_option = cli_options.use_auth_option()
+hub_url_option = cli_options.hub_url_option()
+format_option = cli_options.format_option()
+force_option = cli_options.force_option()
+cloud_provider_option = cli_options.cloud_provider_option(VALID_CLOUDS)
+customer_id_option = cli_options.customer_id_option()
+env_option = cli_options.env_option()
 
 
 _CONF_FOLDER_TO_HUB_TYPE = {

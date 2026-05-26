@@ -11,14 +11,15 @@
 #     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
-import pytest
 from unittest.mock import Mock, patch
 
+import click
+import pytest
 from click.testing import CliRunner
 from rich.text import Text
 
 from ai.chronon.cli.formatter import Format
-from ai.chronon.repo.hub_runner import get_conf_type, hub, redeploy_streaming
+from ai.chronon.repo.hub_runner import get_conf_type, hub, redeploy_streaming, repo_option
 from gen_thrift.api.ttypes import Environment
 
 
@@ -84,6 +85,36 @@ class TestHubRunner:
         result = self._run_and_print(runner, hub, ["--help"])
         assert result.exit_code == 0
         assert "Usage:" in result.output
+
+    def test_repo_option_reads_chronon_root_env(self):
+        """The hub --repo/-r option should match the rest of the CLI and accept CHRONON_ROOT."""
+
+        @click.command()
+        @repo_option
+        def command(repo):
+            click.echo(repo)
+
+        runner = CliRunner()
+        result = runner.invoke(command, [], env={"CHRONON_ROOT": "/tmp/chronon-root"})
+
+        assert result.exit_code == 0
+        assert result.output.strip() == "/tmp/chronon-root"
+
+    def test_repo_option_prefers_explicit_repo_over_chronon_root_env(self):
+        @click.command()
+        @repo_option
+        def command(repo):
+            click.echo(repo)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            command,
+            ["--repo", "/tmp/explicit-root"],
+            env={"CHRONON_ROOT": "/tmp/env-root"},
+        )
+
+        assert result.exit_code == 0
+        assert result.output.strip() == "/tmp/explicit-root"
 
     @patch('requests.post')
     @patch('ai.chronon.repo.hub_runner.get_current_branch')
