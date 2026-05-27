@@ -1206,7 +1206,7 @@ class TestUpgradeCommand:
         result = runner.invoke(admin, [
             "upgrade", "data-plane",
             "compiled/group_bys/aws/dim_listings.v1__0",
-            "--repo", canary,
+            "--chronon-root", canary,
             "--no-use-auth",
         ])
         assert result.exit_code == 0
@@ -1223,7 +1223,7 @@ class TestUpgradeCommand:
             "upgrade", "data-plane",
             "compiled/group_bys/aws/dim_listings.v1__0",
             "compiled/group_bys/aws/dim_merchants.v1__0",
-            "--repo", canary,
+            "--chronon-root", canary,
             "--no-use-auth",
         ])
         assert result.exit_code == 0
@@ -1237,7 +1237,7 @@ class TestUpgradeCommand:
         runner = CliRunner()
         result = runner.invoke(admin, [
             "upgrade", "data-plane",
-            "--repo", canary,
+            "--chronon-root", canary,
             "--no-use-auth",
         ])
         assert result.exit_code != 0

@@ -87,7 +87,7 @@ class TestHubRunner:
         assert "Usage:" in result.output
 
     def test_repo_option_reads_chronon_root_env(self):
-        """The hub --repo/-r option should match the rest of the CLI and accept CHRONON_ROOT."""
+        """The hub root option should match the rest of the CLI and accept CHRONON_ROOT."""
 
         @click.command()
         @repo_option
@@ -100,7 +100,7 @@ class TestHubRunner:
         assert result.exit_code == 0
         assert result.output.strip() == "/tmp/chronon-root"
 
-    def test_repo_option_prefers_explicit_repo_over_chronon_root_env(self):
+    def test_repo_option_prefers_explicit_chronon_root_over_chronon_root_env(self):
         @click.command()
         @repo_option
         def command(repo):
@@ -109,12 +109,26 @@ class TestHubRunner:
         runner = CliRunner()
         result = runner.invoke(
             command,
-            ["--repo", "/tmp/explicit-root"],
+            ["--chronon-root", "/tmp/explicit-root"],
             env={"CHRONON_ROOT": "/tmp/env-root"},
         )
 
         assert result.exit_code == 0
         assert result.output.strip() == "/tmp/explicit-root"
+
+    def test_repo_option_supports_deprecated_repo_alias(self):
+        @click.command()
+        @repo_option
+        def command(repo):
+            click.echo(repo)
+
+        runner = CliRunner()
+        result = runner.invoke(command, ["--repo", "/tmp/explicit-root"])
+
+        assert result.exit_code == 0
+        assert "DeprecationWarning" in result.output
+        assert "Use --chronon-root instead." in result.output
+        assert result.output.strip().endswith("/tmp/explicit-root")
 
     @patch('requests.post')
     @patch('ai.chronon.repo.hub_runner.get_current_branch')
@@ -134,7 +148,7 @@ class TestHubRunner:
         result = self._run_and_print(runner, hub, [
             'backfill',
             online_join_conf,
-            '--repo', canary,
+            '--chronon-root', canary,
             '--no-use-auth',
             '--start-ds', '2024-01-15',
             '--end-ds', '2024-02-15',
@@ -181,7 +195,7 @@ class TestHubRunner:
         result = self._run_and_print(runner, hub, [
             'run-adhoc',
             online_join_conf,
-            '--repo', canary,
+            '--chronon-root', canary,
             '--no-use-auth',
             '--start-ds', '2024-01-15',
             '--end-ds', '2024-02-15',
@@ -192,7 +206,7 @@ class TestHubRunner:
         result = self._run_and_print(runner, hub, [
             'run-adhoc',
             online_join_conf,
-            '--repo', canary,
+            '--chronon-root', canary,
             '--no-use-auth',
             '--end-ds', '2024-02-15',
         ])
@@ -234,7 +248,7 @@ class TestHubRunner:
         result = self._run_and_print(runner, hub, [
             'schedule',
             online_join_conf,
-            '--repo', canary,
+            '--chronon-root', canary,
             '--no-use-auth',
         ])
 
@@ -277,7 +291,7 @@ class TestHubRunner:
         result = self._run_and_print(runner, hub, [
             'cancel',
             workflow_id,
-            '--repo', canary,
+            '--chronon-root', canary,
             '--no-use-auth',
             '--cloud', 'gcp',
         ])
@@ -316,7 +330,7 @@ class TestHubRunner:
         result = self._run_and_print(runner, hub, [
             'cancel',
             workflow_id,
-            '--repo', canary,
+            '--chronon-root', canary,
             '--no-use-auth',
             '--cloud', 'azure',
             '--customer-id', customer_id,
@@ -355,7 +369,7 @@ class TestHubRunner:
         result = self._run_and_print(runner, hub, [
             'cancel',
             workflow_id,
-            '--repo', canary,
+            '--chronon-root', canary,
             '--no-use-auth',
             '--cloud', 'azure',
             # Intentionally not providing --customer-id
@@ -380,7 +394,7 @@ class TestHubRunner:
         runner = CliRunner()
         result = self._run_and_print(runner, hub, [
             'schedule-all',
-            '--repo', canary,
+            '--chronon-root', canary,
             '--cloud', 'gcp',
             '--no-use-auth',
         ])
@@ -421,7 +435,7 @@ class TestHubRunner:
         runner = CliRunner()
         result = self._run_and_print(runner, hub, [
             'schedule-all',
-            '--repo', canary,
+            '--chronon-root', canary,
             '--cloud', 'gcp',
             '--no-use-auth',
         ])
@@ -462,7 +476,7 @@ class TestHubRunner:
         runner = CliRunner()
         result = self._run_and_print(runner, hub, [
             'schedule-all',
-            '--repo', canary,
+            '--chronon-root', canary,
             '--cloud', 'gcp',
             '--no-use-auth',
         ])
@@ -503,7 +517,7 @@ class TestHubRunner:
         runner = CliRunner()
         result = self._run_and_print(runner, hub, [
             'schedule-all',
-            '--repo', canary,
+            '--chronon-root', canary,
             '--cloud', 'gcp',
             '--no-use-auth',
         ])
@@ -546,7 +560,7 @@ class TestHubRunner:
         runner = CliRunner()
         result = self._run_and_print(runner, hub, [
             'schedule-all',
-            '--repo', canary,
+            '--chronon-root', canary,
             '--cloud', 'gcp',
             '--no-use-auth',
         ])
@@ -935,7 +949,7 @@ class TestHubRunner:
         result = self._run_and_print(runner, hub, [
             'clear-downstream',
             online_join_conf,
-            '--repo', canary,
+            '--chronon-root', canary,
             '--no-use-auth',
             '--start-ds', '2024-01-01',
             '--end-ds', '2024-01-05',
@@ -1323,7 +1337,7 @@ class TestHubRunner:
         # Test with --env prod
         result = self._run_and_print(runner, hub, [
             'schedule-all',
-            '--repo', canary,
+            '--chronon-root', canary,
             '--cloud', 'gcp',
             '--no-use-auth',
             '--env', 'prod',
@@ -1337,7 +1351,7 @@ class TestHubRunner:
         # Test with --env canary
         result = self._run_and_print(runner, hub, [
             'schedule-all',
-            '--repo', canary,
+            '--chronon-root', canary,
             '--cloud', 'gcp',
             '--no-use-auth',
             '--env', 'canary',
@@ -1364,7 +1378,7 @@ class TestHubRunner:
         # Test with invalid env value
         result = self._run_and_print(runner, hub, [
             'schedule-all',
-            '--repo', canary,
+            '--chronon-root', canary,
             '--cloud', 'gcp',
             '--no-use-auth',
             '--env', 'invalid',
