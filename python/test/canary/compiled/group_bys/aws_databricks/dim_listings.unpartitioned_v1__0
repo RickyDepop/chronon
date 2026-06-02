@@ -4,24 +4,14 @@
   ],
   "metaData": {
     "columnHashes": {
-      "brief_description": "378ceb4317bfa5dc966d22d599a22a04",
-      "currency": "afdb8b28b571ef6c8f700e256faa7fbf",
-      "headline": "16cb80658a63db4ae09282632eaacad7",
-      "inventory_count": "dc7d5ec8f433ffc915d89c0095e8798b",
-      "is_active": "684c5965d0ce623ea40f8584cab3fd46",
-      "is_expensive": "fc99054a0926ec84ead3d976739383a0",
-      "is_in_stock": "cebc2f760a28c48e88d8472471497f68",
-      "listing_id": "84f400a125f6526d411da9950fe2da70",
-      "long_description": "29155bb6077b0d4b544a572d5b510f81",
-      "main_image_path": "5ee2ac80f662ed6329fe59ee02cdd930",
-      "merchant_id": "5081d78ff6f763f24108310d1769f2fe",
-      "price_cents": "1909ba7e731ca0690ec6e63a79d003fc",
-      "primary_category": "a4792e3b6f923cb2c17164fd6f7bd5e3",
-      "secondary_image_paths": "1e5b8f72b5ce7da858c7424996ec37b0",
-      "tags": "16228c8f3c5230b23b31d97948c511a2",
-      "weight_grams": "9c69184304be9ad5eaa1f82ce3fd600d"
+      "currency": "1e4fe9bfda620401a502c00d3b2e4c45",
+      "headline": "4aa0f35a360d8efdf559b42d520ae928",
+      "is_active": "f792c4178833afcde9c5944f6dbe8bce",
+      "listing_id": "8b6028838b306d5dfa9fa6f414c604ec",
+      "merchant_id": "239f72077b902e0927811d1e0cb7cd39",
+      "price_cents": "283f0c2269b27308b4176869197f53f5"
     },
-    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_workspace_iceberg_poc_aws_databricks_exports_dim_listings__0_with_offset_0\", \"spec\": \"workspace_iceberg.poc.aws_databricks_exports_dim_listings__0/ds={{ macros.ds_add(ds, 0) }}\"}]}",
+    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_workspace_iceberg_poc_aws_databricks_exports_dim_listings_unpartitioned__0_with_offset_0\", \"spec\": \"workspace_iceberg.poc.aws_databricks_exports_dim_listings_unpartitioned__0/ds={{ macros.ds_add(ds, 0) }}\"}]}",
     "executionInfo": {
       "clusterConf": {
         "common": {
@@ -74,39 +64,31 @@
           "WAREHOUSE_PREFIX": "s3://zipline-warehouse-canary"
         }
       },
-      "historicalBackfill": 0
+      "historicalBackfill": 0,
+      "stepDays": 30
     },
-    "name": "aws_databricks.dim_listings.v1",
+    "name": "aws_databricks.dim_listings.unpartitioned_v1__0",
     "online": 0,
     "outputNamespace": "workspace_iceberg.poc",
     "sourceFile": "group_bys/aws_databricks/dim_listings.py",
-    "team": "aws_databricks"
+    "team": "aws_databricks",
+    "version": "0"
   },
   "sources": [
     {
       "entities": {
         "query": {
           "selects": {
-            "brief_description": "brief_description",
             "currency": "currency",
             "headline": "headline",
-            "inventory_count": "inventory_count",
             "is_active": "is_active",
-            "is_expensive": "IF(price_cents > 10000, 1, 0)",
-            "is_in_stock": "IF(inventory_count > 0, 1, 0)",
-            "listing_id": "CAST(listing_id AS INT)",
-            "long_description": "long_description",
-            "main_image_path": "main_image_path",
+            "listing_id": "listing_id",
             "merchant_id": "merchant_id",
-            "price_cents": "price_cents",
-            "primary_category": "primary_category",
-            "secondary_image_paths": "secondary_image_paths",
-            "tags": "tags",
-            "weight_grams": "weight_grams"
+            "price_cents": "price_cents"
           },
           "startPartition": "2025-01-01"
         },
-        "snapshotTable": "workspace_iceberg.poc.aws_databricks_exports_dim_listings__0"
+        "snapshotTable": "workspace_iceberg.poc.aws_databricks_exports_dim_listings_unpartitioned__0"
       }
     }
   ]
