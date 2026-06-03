@@ -60,7 +60,7 @@ import string
 
 import pytest
 
-from .helpers.cleanup import AWSCleanup, AzureCleanup, GCPCleanup
+from .helpers.cleanup import AWSCleanup, AzureCleanup, DatabricksCleanup, GCPCleanup
 from .helpers.templates import cleanup_test_configs, generate_test_configs, get_confs
 
 logger = logging.getLogger(__name__)
@@ -160,6 +160,16 @@ def test_id(request, chronon_root, cloud):
         elif cloud == "aws":
             database = os.environ.get("AWS_GLUE_DATABASE", "default")
             AWSCleanup(database).cleanup_tables(tid)
+            # aws_databricks team also runs under CLOUD=aws; its output tables
+            # live in Unity Catalog, not Glue.
+            uc_host = os.environ.get(
+                "DATABRICKS_HOST", "https://dbc-050d6f00-dcb3.cloud.databricks.com"
+            )
+            uc_warehouse = os.environ.get("DATABRICKS_WAREHOUSE_ID", "3e9f97949d0e3c9a")
+            uc_schemas = os.environ.get(
+                "DATABRICKS_UC_SCHEMAS", "workspace_iceberg.poc"
+            ).split(",")
+            DatabricksCleanup(uc_host, uc_warehouse, uc_schemas).cleanup_tables(tid)
         elif cloud == "azure":
             catalog = os.environ.get("AZURE_CATALOG", "default")
             AzureCleanup(catalog).cleanup_tables(tid)

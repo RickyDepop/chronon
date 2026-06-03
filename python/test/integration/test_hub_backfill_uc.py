@@ -27,8 +27,14 @@ UC_DEMO_VARIANTS = [
 
 @pytest.mark.integration
 @pytest.mark.parametrize("conf_path", UC_DEMO_VARIANTS, ids=lambda p: p.rsplit(".", 1)[-1])
-def test_backfill_uc_demo(chronon_root, hub_url, cloud, conf_path):
-    """Multi-day backfill of an aws_databricks/demo.* variant via UC + Delta."""
+def test_backfill_uc_demo(confs, chronon_root, hub_url, cloud, conf_path):
+    """Multi-day backfill of an aws_databricks/demo.* variant via UC + Delta.
+
+    Uses the ``confs`` fixture so each run hits a fresh test_id-scoped conf
+    name. Without this, Hub fast-skips on the second run because the output
+    Iceberg partitions for the previous run still exist (workflow reports
+    SUCCEEDED with zero work actually executed).
+    """
     if cloud != "aws":
         pytest.skip(f"UC backfill is AWS-only; cloud={cloud}")
 
@@ -37,6 +43,6 @@ def test_backfill_uc_demo(chronon_root, hub_url, cloud, conf_path):
 
     workflow_id = submit_backfill(
         runner, chronon_root, hub_url,
-        conf_path, "2026-02-02", "2026-02-04",
+        confs(conf_path), "2026-02-02", "2026-02-04",
     )
     poll_workflow(hub_url, workflow_id, timeout=1800, interval=45)
