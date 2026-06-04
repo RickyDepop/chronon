@@ -41,8 +41,15 @@ def test_backfill_uc_demo(confs, chronon_root, hub_url, cloud, conf_path):
     runner = CliRunner()
     compile_configs(runner, chronon_root)
 
+    # 2026-02-01 → 2026-02-05 is the consistent window across all 4 variants:
+    # the dense source tables (dim_listings_pt / dim_listings_unpartitioned)
+    # are populated for every date, while the sparse sources
+    # (dim_listings_sparse / dim_listings_unpartitioned_sparse) have data at
+    # 02-01, 02-03, 02-05 and gaps at 02-02, 02-04. Endpoints exist so
+    # chronon's range check passes; the intra-range gaps exercise the
+    # sparse-data code paths end-to-end.
     workflow_id = submit_backfill(
         runner, chronon_root, hub_url,
-        confs(conf_path), "2026-02-02", "2026-02-04",
+        confs(conf_path), "2026-02-01", "2026-02-05",
     )
     poll_workflow(hub_url, workflow_id, timeout=1800, interval=45)

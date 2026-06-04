@@ -96,7 +96,7 @@ class DatabricksCleanup:
         Serverless SQL warehouse id used to run ``SHOW TABLES`` / ``DROP TABLE``.
     schemas : list[str]
         Fully-qualified ``<catalog>.<schema>`` namespaces to scan for matching
-        tables (e.g. ``["workspace_iceberg.poc"]``).
+        tables (e.g. ``["workspace.poc"]``).
     """
 
     OAUTH_PATH = "/oidc/v1/token"

@@ -166,8 +166,12 @@ def test_id(request, chronon_root, cloud):
                 "DATABRICKS_HOST", "https://dbc-050d6f00-dcb3.cloud.databricks.com"
             )
             uc_warehouse = os.environ.get("DATABRICKS_WAREHOUSE_ID", "3e9f97949d0e3c9a")
+            # Schema is `workspace.poc` — chronon writes via the Iceberg REST
+            # spark catalog named "workspace_iceberg", but the underlying UC
+            # catalog those tables resolve to (and what SHOW TABLES / DROP TABLE
+            # accept via the SQL Statements API) is "workspace".
             uc_schemas = os.environ.get(
-                "DATABRICKS_UC_SCHEMAS", "workspace_iceberg.poc"
+                "DATABRICKS_UC_SCHEMAS", "workspace.poc"
             ).split(",")
             DatabricksCleanup(uc_host, uc_warehouse, uc_schemas).cleanup_tables(tid)
         elif cloud == "azure":
