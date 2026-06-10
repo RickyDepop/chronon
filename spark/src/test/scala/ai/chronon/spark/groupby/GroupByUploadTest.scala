@@ -761,7 +761,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
     transactionsDf.show()
 
     val userTransactionsGroupBy = Builders.GroupBy(
-      metaData = Builders.MetaData(namespace = namespace, name = "user_transactions"),
+      metaData = Builders.MetaData(namespace = namespace, name = "user_transactions", online = true),
       sources = Seq(
         Builders.Source.events(
           Builders.Query(selects = Builders.Selects("user_id", "price", "discount", "quantity", "ts")),
@@ -838,6 +838,14 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
 
     val user2DiscountRate = user2Response.values.get("discount_rate").asInstanceOf[java.math.BigDecimal]
     math.abs(user2DiscountRate.doubleValue() - 0.0996) should be < 0.0001
+
+    // /v1/groupby/:name/schema must resolve from the batch GroupByServingInfo alone: serve() above ran a
+    // real GroupByUpload and bulk-loaded the batch dataset without writing the conf to CHRONON_METADATA,
+    // which is the production setup that previously broke fetchGroupBySchema.
+    val schema = fetcher.fetchGroupBySchema("user_transactions").get
+    schema.groupByName shouldBe "user_transactions"
+    AvroCodec.of(schema.keySchema).fieldNames.toSet shouldBe Set("user_id")
+    AvroCodec.of(schema.valueSchema).fieldNames.toSet shouldBe Set("net_price", "discount_rate")
   }
 }
 
