@@ -191,5 +191,7 @@ aws_databricks_env.common['WAREHOUSE_PREFIX'] = "s3://zipline-warehouse-aws"
 aws_databricks_env.common['FRONTEND_URL'] = "https://crucible-aws.zipline.ai"
 aws_databricks_env.common['HUB_URL'] = "https://crucible-orch-aws.zipline.ai"
 aws_databricks.conf.common['spark.sql.warehouse.dir'] = "s3://zipline-warehouse-aws/data/uc-poc/warehouse/"
+# UC's vended-creds default works on the K8sSubmitter path; only EMR needs the opt-out.
+del aws_databricks.conf.common['spark.sql.catalog.workspace.renewCredential.enabled']
 
 aws.env.common['ARTIFACT_PREFIX'] = "s3://zipline-artifacts-canary-aws"
