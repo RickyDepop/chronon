@@ -11,17 +11,26 @@ Four variants cover the partitioning × density matrix:
   - demo.unpartitioned_sparse_v1 — unpartitioned sparse
 """
 
+import os
+
 import pytest
 from click.testing import CliRunner
 
 from .helpers.cli import compile_configs, submit_backfill
 from .helpers.workflow import poll_workflow
 
+# aws_databricks ships canary EMR Serverless wiring in teams.py (PROD compile,
+# `compiled/`) and crucible-aws K8sSubmitter overrides in teams.canary.py (canary
+# compile, `compiled_canary/`). The deploying CI picks which set is read by
+# setting ZIPLINE_COMPILE_ENV. Default "prod" keeps update_canary.yaml untouched.
+_COMPILE_ENV = os.environ.get("ZIPLINE_COMPILE_ENV", "prod").strip() or "prod"
+_COMPILED_DIR = "compiled" if _COMPILE_ENV == "prod" else f"compiled_{_COMPILE_ENV}"
+
 UC_DEMO_VARIANTS = [
-    "compiled/joins/aws_databricks/demo.pt_v1",
-    "compiled/joins/aws_databricks/demo.sparse_v1",
-    "compiled/joins/aws_databricks/demo.unpartitioned_v1",
-    "compiled/joins/aws_databricks/demo.unpartitioned_sparse_v1",
+    f"{_COMPILED_DIR}/joins/aws_databricks/demo.pt_v1",
+    f"{_COMPILED_DIR}/joins/aws_databricks/demo.sparse_v1",
+    f"{_COMPILED_DIR}/joins/aws_databricks/demo.unpartitioned_v1",
+    f"{_COMPILED_DIR}/joins/aws_databricks/demo.unpartitioned_sparse_v1",
 ]
 
 
