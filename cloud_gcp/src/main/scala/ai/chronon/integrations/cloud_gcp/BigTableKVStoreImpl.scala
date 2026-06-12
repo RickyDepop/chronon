@@ -581,17 +581,17 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
   override def init(props: Map[String, Any]): Unit = {
     super.init(props)
 
-    val warmupLengthMillis: Long = 5000L
+    val warmupLengthMillis: Long =
+      conf.get("WARMUP_TIMEOUT_MS").map(_.toLong).getOrElse(30000L)
     // Perform some dummy operations to warm up the client
     // This can help reduce latency for the first real operations.
     // Intentionally getting and deleting non-existent keys below to warm up.
 
     val testKey = "warmup_key"
-    logger.info(s"Warming up KVStore with key prefix $testKey")
+    logger.info(s"Warming up KVStore with key prefix $testKey (timeout=${warmupLengthMillis}ms)")
     try {
       val getFutures = this.multiGet(
-        // create 100 requests to simulate load
-        (1 to 100)
+        (1 to 1000)
           .map(i =>
             GetRequest(
               keyBytes = s"${testKey}_$i".getBytes,
@@ -600,7 +600,7 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
           .toSeq
       )
       val deleteFutures = this.multiDelete(
-        (1 to 100)
+        (1 to 1000)
           .map(i =>
             DeleteRequest(
               keyBytes = s"${testKey}_$i".getBytes,
@@ -608,19 +608,12 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
             ))
           .toSeq
       )
-      // Wait for the future to complete with a timeout
-      try {
-        Await.result(getFutures, warmupLengthMillis.milliseconds)
-        Await.result(deleteFutures, warmupLengthMillis.milliseconds)
-      } // swallow exception
-      catch {
-        case _: Exception =>
-      }
-
+      Await.result(getFutures, warmupLengthMillis.milliseconds)
+      Await.result(deleteFutures, warmupLengthMillis.milliseconds)
       logger.info("KVStore warm-up completed successfully")
     } catch {
       case e: Exception =>
-        logger.warn("Warm-up operations failed", e)
+        logger.warn(s"KVStore warm-up failed after ${warmupLengthMillis}ms", e)
     }
   }
 }
