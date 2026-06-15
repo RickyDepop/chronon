@@ -15,6 +15,8 @@ import com.google.cloud.bigtable.data.v2.BigtableDataClient
 import com.google.cloud.bigtable.data.v2.BigtableDataSettings
 import com.google.cloud.bigtable.data.v2.models.{Query, Row, RowMutation}
 import com.google.cloud.bigtable.emulator.v2.Emulator
+import com.google.cloud.bigquery.{BigQuery, JobInfo}
+import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{when, withSettings}
 import org.scalatest.BeforeAndAfter
@@ -749,5 +751,33 @@ class BigTableKVStoreTest extends AnyFlatSpec with BeforeAndAfter {
       tSeq.map(v => new String(v.bytes, StandardCharsets.UTF_8)).foreach(v => v shouldBe expectedPayload)
       tSeq.length shouldBe expectedTimestamps.length
     }
+  }
+
+  // Captures the JobInfo submitted by bulkPut so callers can assert on its location.
+  // We short-circuit the BQ flow by throwing from create(); the JobInfo is captured before
+  // the throw, and bulkPut swallows the exception via its metrics path.
+  private def captureBulkPutJobInfo(conf: Map[String, String]): JobInfo = {
+    val bigQueryClient = mock[BigQuery]
+    when(bigQueryClient.create(any[JobInfo])).thenThrow(new RuntimeException("short-circuit"))
+
+    val kvStore =
+      new BigTableKVStoreImpl(dataClient, adminClient, maybeBigQueryClient = Some(bigQueryClient), conf = conf)
+    try kvStore.bulkPut("project.dataset.source_tbl", "test_dataset", "2026-06-11")
+    catch { case _: RuntimeException => () }
+
+    val captor = ArgumentCaptor.forClass(classOf[JobInfo])
+    org.mockito.Mockito.verify(bigQueryClient).create(captor.capture())
+    captor.getValue
+  }
+
+  it should "pin bulkPut export job to GCP_LOCATION from conf" in {
+    val jobInfo = captureBulkPutJobInfo(Map("GCP_LOCATION" -> "us-west1"))
+    jobInfo.getJobId.getLocation shouldBe "us-west1"
+    jobInfo.getJobId.getProject shouldBe projectId
+  }
+
+  it should "default bulkPut export job location to null when GCP_LOCATION is absent" in {
+    val jobInfo = captureBulkPutJobInfo(Map.empty)
+    jobInfo.getJobId.getLocation shouldBe null
   }
 }
