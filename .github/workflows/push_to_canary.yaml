@@ -37,13 +37,20 @@ jobs:
           fetch-depth: 2
       - name: Configure Git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: ./.github/actions/setup-mill-cache
+        with:
+          coursier-repositories: ${{ vars.COURSIER_REPOSITORIES }}
       - name: Compile canary configs against previous baseline
         shell: bash
         run: |
           # Build the mill venv (installs deps + generates thrift sources)
+          set -euxo pipefail
           ./mill python.pythonExe
           ./mill python.generatedSources
-          VENV_PYTHON="$(pwd)/out/python/pythonExe.dest/venv/bin/python3"
+
+          # Mill's pythonExe dest path is not stable across versions/environments;
+          # read the canonical path from the task's JSON metadata instead of hardcoding.
+          VENV_PYTHON=$(python3 -c 'import json; print(json.load(open("out/python/pythonExe.json"))["value"].rsplit(":",1)[1])')
 
           export PYTHONHASHSEED=0
           export PYTHONPATH="$(pwd)/python/src:$(pwd)/out/python/generatedSources.dest:$(pwd)/python/test/canary"
@@ -75,6 +82,10 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-mill-cache
+        with:
+          coursier-repositories: ${{ vars.COURSIER_REPOSITORIES }}
 
       - name: Configure AWS Credentials for Canary Project
         uses: aws-actions/configure-aws-credentials@v4
@@ -180,6 +191,10 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - uses: ./.github/actions/setup-mill-cache
+        with:
+          coursier-repositories: ${{ vars.COURSIER_REPOSITORIES }}
+
       - name: Configure GCP Credentials for Canary Project
         uses: google-github-actions/auth@v2
         with:
@@ -282,7 +297,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: corretto
-          java-version: 11
+          java-version: 17
 
       - name: Set up Python
         uses: actions/setup-python@v5
