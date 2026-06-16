@@ -1289,6 +1289,130 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     noException should be thrownBy runner.run(metadata, nodeContent, Option(range))
   }
 
+  private def makeRunnerForLogTests(): BatchNodeRunner = {
+    val nodeContent = createTestNodeContent()
+    val metadata = createTestMetadata("test_db.input_table", "test_db.output_table")
+    val node = new Node().setMetaData(metadata).setContent(nodeContent)
+    new BatchNodeRunner(node, tableUtils, mockApi)
+  }
+
+  "BatchNodeRunner.logIcebergPartitionRowCounts" should "include only partitions whose ds is in [range.start, range.end] inclusive" in {
+    val runner = makeRunnerForLogTests()
+    implicit val partitionSpec: PartitionSpec = tableUtils.partitionSpec
+    val range = PartitionRange("2026-06-09", "2026-06-10")(partitionSpec)
+
+    val partitionRowCounts: Map[List[(String, String)], Long] = Map(
+      List("ds" -> "2026-06-08") -> 10L,
+      List("ds" -> "2026-06-09") -> 20L,
+      List("ds" -> "2026-06-10") -> 30L,
+      List("ds" -> "2026-06-11") -> 40L
+    )
+
+    val result = runner.logIcebergPartitionRowCounts(
+      "test_db.output_table",
+      "test_conf",
+      range,
+      partitionRowCounts
+    )
+
+    result.get should contain theSameElementsAs Seq(
+      "ds=2026-06-09" -> 20L,
+      "ds=2026-06-10" -> 30L
+    )
+  }
+
+  it should "skip partition keys that lack the partition-spec column" in {
+    val runner = makeRunnerForLogTests()
+    implicit val partitionSpec: PartitionSpec = tableUtils.partitionSpec
+    val range = PartitionRange("2026-06-01", "2026-06-30")(partitionSpec)
+
+    val partitionRowCounts: Map[List[(String, String)], Long] = Map(
+      List("ds" -> "2026-06-09") -> 20L,
+      List("region" -> "North") -> 999L,
+      List("ds" -> "2026-06-10") -> 30L
+    )
+
+    val result = runner.logIcebergPartitionRowCounts(
+      "test_db.output_table",
+      "test_conf",
+      range,
+      partitionRowCounts
+    )
+
+    val matched = result.get
+    matched.map(_._1) should not contain "region=North"
+    matched should contain allOf ("ds=2026-06-09" -> 20L, "ds=2026-06-10" -> 30L)
+    matched should have size 2
+  }
+
+  it should "preserve multi-column sub-day partition granularity in the path string" in {
+    val runner = makeRunnerForLogTests()
+    implicit val partitionSpec: PartitionSpec = tableUtils.partitionSpec
+    val range = PartitionRange("2026-06-09", "2026-06-09")(partitionSpec)
+
+    val partitionRowCounts: Map[List[(String, String)], Long] = Map(
+      List("ds" -> "2026-06-09", "hour" -> "00") -> 100L,
+      List("ds" -> "2026-06-09", "hour" -> "01") -> 200L
+    )
+
+    val result = runner.logIcebergPartitionRowCounts(
+      "test_db.output_table",
+      "test_conf",
+      range,
+      partitionRowCounts
+    )
+
+    result.get should contain theSameElementsInOrderAs Seq(
+      "ds=2026-06-09/hour=00" -> 100L,
+      "ds=2026-06-09/hour=01" -> 200L
+    )
+  }
+
+  it should "sort results by partition path string" in {
+    val runner = makeRunnerForLogTests()
+    implicit val partitionSpec: PartitionSpec = tableUtils.partitionSpec
+    val range = PartitionRange("2026-06-01", "2026-06-30")(partitionSpec)
+
+    // Insertion order is intentionally non-monotonic; the returned Seq should be sorted.
+    val partitionRowCounts: Map[List[(String, String)], Long] = Map(
+      List("ds" -> "2026-06-12") -> 12L,
+      List("ds" -> "2026-06-09") -> 9L,
+      List("ds" -> "2026-06-15") -> 15L,
+      List("ds" -> "2026-06-10") -> 10L
+    )
+
+    val result = runner.logIcebergPartitionRowCounts(
+      "test_db.output_table",
+      "test_conf",
+      range,
+      partitionRowCounts
+    )
+
+    result.get.map(_._1) should be(
+      Seq("ds=2026-06-09", "ds=2026-06-10", "ds=2026-06-12", "ds=2026-06-15")
+    )
+  }
+
+  it should "return an empty sequence when no partitions match the range" in {
+    val runner = makeRunnerForLogTests()
+    implicit val partitionSpec: PartitionSpec = tableUtils.partitionSpec
+    val range = PartitionRange("2030-01-01", "2030-12-31")(partitionSpec)
+
+    val partitionRowCounts: Map[List[(String, String)], Long] = Map(
+      List("ds" -> "2026-06-09") -> 20L,
+      List("ds" -> "2026-06-10") -> 30L
+    )
+
+    val result = runner.logIcebergPartitionRowCounts(
+      "test_db.output_table",
+      "test_conf",
+      range,
+      partitionRowCounts
+    )
+
+    result.get should be(empty)
+  }
+
   override def afterAll(): Unit = {
     spark.sql("DROP DATABASE IF EXISTS test_db CASCADE")
     spark.stop()
