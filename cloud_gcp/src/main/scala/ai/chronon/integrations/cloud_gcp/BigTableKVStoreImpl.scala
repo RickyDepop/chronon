@@ -267,7 +267,7 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
   }
 
   override def list(request: ListRequest): Future[ListResponse] = {
-    logger.info(s"Performing list for ${request.dataset}")
+    logger.debug(s"Performing list for ${request.dataset}")
 
     val listLimit = request.props.get(ListLimit) match {
       case Some(value: Int)    => value
@@ -305,7 +305,7 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
         val startRowKey = buildRowKey(s"$listEntityType/".getBytes(Charset.forName("UTF-8")), request.dataset)
         query.range(ByteStringRange.unbounded().startOpen(ByteString.copyFrom(startRowKey)))
       case _ =>
-        logger.info("No start key or list entity type provided. Starting from the beginning")
+        logger.debug("No start key or list entity type provided. Starting from the beginning")
     }
 
     val startTs = System.currentTimeMillis()

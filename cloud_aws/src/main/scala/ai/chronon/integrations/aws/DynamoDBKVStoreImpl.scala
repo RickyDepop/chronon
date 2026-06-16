@@ -290,7 +290,7 @@ class DynamoDBKVStoreImpl(rawDynamoDbClient: DynamoDbAsyncClient, conf: Map[Stri
   // success behavior on batch writes which necessitates a bit more logic on our end to tie things together.
   // To keep things simple for now, we implement the multiput as a sequence of put calls.
   override def multiPut(keyValueDatasets: Seq[KVStore.PutRequest]): Future[Seq[Boolean]] = {
-    logger.info(s"Triggering multiput for ${keyValueDatasets.size}: rows")
+    logger.debug(s"Triggering multiput for ${keyValueDatasets.size}: rows")
     val futureResponses = keyValueDatasets.map { req =>
       val (actualKeyBytes, actualTimestamp) = if (isStreamingTable(req.dataset)) {
         // For streaming tables, unwrap TileKey to use entity key + tileSizeMs as partition key
