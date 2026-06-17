@@ -120,6 +120,118 @@ class JoinPlannerTest extends AnyFlatSpec with Matchers {
     mutationDep.endOffset should equal(WindowUtils.zero())
   }
 
+  it should "put the left table first in merge node dependencies" in {
+    val standardGroupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(Builders.Query(partitionColumn = "ds"), table = "test.other_events")),
+      keyColumns = Seq("listing_id"),
+      aggregations = Seq(Builders.Aggregation(Operation.COUNT, "event_count", Seq(WindowUtils.Unbounded))),
+      accuracy = Accuracy.TEMPORAL,
+      metaData = Builders.MetaData(namespace = "test_namespace", name = "merge_order_events_gb")
+    )
+
+    val join = Join(
+      metaData = MetaData(
+        name = "modular_merge_order_join",
+        namespace = "test_namespace",
+        executionInfo = modularExecutionInfo
+      ),
+      left = Builders.Source.events(Builders.Query(partitionColumn = "ds"), table = "test.left_events"),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = temporalEntityGroupBy("merge_order_temporal_entity_gb")),
+        Builders.JoinPart(groupBy = standardGroupBy)
+      )
+    )
+
+    val plan = new JoinPlanner(join).buildPlan
+
+    val sourceNode = plan.nodes.asScala.find(_.content.isSetSourceWithFilter).get
+    val joinPartNodes = plan.nodes.asScala.filter(_.content.isSetJoinPart)
+    val mergeNode = plan.nodes.asScala.find(_.content.isSetJoinMerge).get
+
+    val depTables = mergeNode.metaData.executionInfo.tableDependencies.asScala.map(_.tableInfo.table)
+
+    depTables.head should equal(sourceNode.metaData.outputTable)
+    depTables.tail should equal(joinPartNodes.map(_.metaData.outputTable))
+  }
+
+  it should "put the bootstrap left table first in merge node dependencies" in {
+    val standardGroupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(Builders.Query(partitionColumn = "ds"), table = "test.other_events")),
+      keyColumns = Seq("listing_id"),
+      aggregations = Seq(Builders.Aggregation(Operation.COUNT, "event_count", Seq(WindowUtils.Unbounded))),
+      accuracy = Accuracy.TEMPORAL,
+      metaData = Builders.MetaData(namespace = "test_namespace", name = "merge_bootstrap_order_events_gb")
+    )
+
+    val join = Join(
+      metaData = MetaData(
+        name = "modular_merge_bootstrap_order_join",
+        namespace = "test_namespace",
+        executionInfo = modularExecutionInfo
+      ),
+      left = Builders.Source.events(Builders.Query(partitionColumn = "ds"), table = "test.left_events"),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = temporalEntityGroupBy("merge_bootstrap_order_temporal_entity_gb")),
+        Builders.JoinPart(groupBy = standardGroupBy)
+      ),
+      bootstrapParts = Seq(
+        Builders.BootstrapPart(
+          table = "test.bootstrap_features",
+          query = Builders.Query(partitionColumn = "ds"),
+          keyColumns = Seq("listing_id")
+        )
+      )
+    )
+
+    val plan = new JoinPlanner(join).buildPlan
+
+    val bootstrapNode = plan.nodes.asScala.find(_.content.isSetJoinBootstrap).get
+    val joinPartNodes = plan.nodes.asScala.filter(_.content.isSetJoinPart)
+    val mergeNode = plan.nodes.asScala.find(_.content.isSetJoinMerge).get
+
+    val depTables = mergeNode.metaData.executionInfo.tableDependencies.asScala.map(_.tableInfo.table)
+
+    depTables.head should equal(bootstrapNode.metaData.outputTable)
+    depTables.tail should equal(joinPartNodes.map(_.metaData.outputTable))
+  }
+
+  it should "put the source table first in bootstrap node dependencies" in {
+    val standardGroupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(Builders.Query(partitionColumn = "ds"), table = "test.other_events")),
+      keyColumns = Seq("listing_id"),
+      aggregations = Seq(Builders.Aggregation(Operation.COUNT, "event_count", Seq(WindowUtils.Unbounded))),
+      accuracy = Accuracy.TEMPORAL,
+      metaData = Builders.MetaData(namespace = "test_namespace", name = "bootstrap_order_events_gb")
+    )
+
+    val join = Join(
+      metaData = MetaData(
+        name = "modular_bootstrap_order_join",
+        namespace = "test_namespace",
+        executionInfo = modularExecutionInfo
+      ),
+      left = Builders.Source.events(Builders.Query(partitionColumn = "ds"), table = "test.left_events"),
+      joinParts = Seq(Builders.JoinPart(groupBy = standardGroupBy)),
+      bootstrapParts = Seq(
+        Builders.BootstrapPart(
+          table = "test.bootstrap_features",
+          query = Builders.Query(partitionColumn = "ds"),
+          keyColumns = Seq("listing_id")
+        )
+      )
+    )
+
+    val plan = new JoinPlanner(join).buildPlan
+
+    val sourceNode = plan.nodes.asScala.find(_.content.isSetSourceWithFilter).get
+    val bootstrapNode = plan.nodes.asScala.find(_.content.isSetJoinBootstrap).get
+
+    val depTables = bootstrapNode.metaData.executionInfo.tableDependencies.asScala.map(_.tableInfo.table)
+
+    depTables.head should equal(sourceNode.metaData.outputTable)
+    depTables.tail should equal(Seq("test.bootstrap_features"))
+  }
+
   it should "depend on upstream join output when the left source is a join source" in {
     val upstreamListingLookup = Builders.GroupBy(
       sources = Seq(Builders.Source.events(Builders.Query(partitionColumn = "ds"), table = "test.user_listings")),
