@@ -776,8 +776,45 @@ class BigTableKVStoreTest extends AnyFlatSpec with BeforeAndAfter {
     jobInfo.getJobId.getProject shouldBe projectId
   }
 
+  it should "pin bulkPut export job to GCP_LOCATION from env (taking precedence over conf)" in {
+    // env takes precedence over conf in GcpApiImpl.getOptional, so we set both with different
+    // values and assert the env value wins
+    withEnv("GCP_LOCATION", "us-east4") {
+      val jobInfo = captureBulkPutJobInfo(Map("GCP_LOCATION" -> "us-central1"))
+      jobInfo.getJobId.getLocation shouldBe "us-east4"
+      jobInfo.getJobId.getProject shouldBe projectId
+    }
+  }
+
   it should "default bulkPut export job location to null when GCP_LOCATION is absent" in {
     val jobInfo = captureBulkPutJobInfo(Map.empty)
     jobInfo.getJobId.getLocation shouldBe null
+  }
+
+  // Mutates the JVM's view of System.getenv() for the duration of `body`, then restores the
+  // prior value. Required because System.getenv() returns an unmodifiable map, java.lang.System
+  // is on Mockito's mockStatic denylist (deadlocks class loading), and Scala's sys.env reads
+  // System.getenv() fresh on each access. Linux/macOS only; Windows uses a separate case-
+  // insensitive map we don't bother with since CI runs on Linux.
+  private def withEnv[T](key: String, value: String)(body: => T): T = {
+    val prior = Option(System.getenv(key))
+    setEnv(key, Some(value))
+    try body
+    finally setEnv(key, prior)
+  }
+
+  private def setEnv(key: String, value: Option[String]): Unit = {
+    val pe = Class.forName("java.lang.ProcessEnvironment")
+    val envField = pe.getDeclaredField("theEnvironment")
+    envField.setAccessible(true)
+    val env = envField.get(null).asInstanceOf[java.util.Map[AnyRef, AnyRef]]
+    val varOf = Class.forName("java.lang.ProcessEnvironment$Variable").getDeclaredMethod("valueOf", classOf[String])
+    val valOf = Class.forName("java.lang.ProcessEnvironment$Value").getDeclaredMethod("valueOf", classOf[String])
+    varOf.setAccessible(true)
+    valOf.setAccessible(true)
+    value match {
+      case Some(v) => env.put(varOf.invoke(null, key), valOf.invoke(null, v))
+      case None    => env.remove(varOf.invoke(null, key))
+    }
   }
 }
