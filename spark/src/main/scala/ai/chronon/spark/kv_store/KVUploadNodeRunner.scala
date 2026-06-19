@@ -9,6 +9,7 @@ import ai.chronon.online.Api
 import ai.chronon.online.fetcher.{FetchContext, MetadataStore}
 import ai.chronon.planner.{Node, NodeContent}
 import ai.chronon.spark.submission.NodeConfReader
+import org.apache.spark.SparkConf
 import org.rogach.scallop.ScallopConf
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -166,7 +167,7 @@ object KVUploadNodeRunner {
       // Merge Node's common conf into API props so config like upload location flows through.
       // Note: executionInfo is erased from the GroupBy inside node content, but preserved on node.metaData.
       val nodeCommonConf = metadata.commonConf
-      val mergedProps = nodeCommonConf ++ props // CLI props take precedence
+      val mergedProps = mergeApiProps(nodeCommonConf, sparkConfApiProps(), props)
 
       val api = instantiateApi(onlineClass, mergedProps)
 
@@ -177,4 +178,15 @@ object KVUploadNodeRunner {
       runner.run(metadata, node.content, range)
     }
   }
+
+  private[kv_store] def sparkConfApiProps(
+      sparkConf: SparkConf = new SparkConf(loadDefaults = true)): Map[String, String] =
+    sparkConf.getAll.collect {
+      case (key, value) if key.startsWith(Constants.ChrononSparkConfPrefix) => key -> value
+    }.toMap
+
+  private[kv_store] def mergeApiProps(nodeCommonConf: Map[String, String],
+                                      sparkConfProps: Map[String, String],
+                                      props: Map[String, String]): Map[String, String] =
+    nodeCommonConf ++ sparkConfProps ++ props // CLI props take precedence
 }

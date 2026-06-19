@@ -1,6 +1,13 @@
 package ai.chronon.integrations.aws
 
-import ai.chronon.api.Constants.{ContinuationKey, KvEnableTtlArg, KvReplicaRegionsArg, KvTablePrefixArg, ListLimit}
+import ai.chronon.api.Constants.{
+  ContinuationKey,
+  KvEnableTtlArg,
+  KvReplicaRegionsArg,
+  KvTablePrefixArg,
+  KvUploadTimeoutMsKey,
+  ListLimit
+}
 import ai.chronon.api.Extensions.StringOps
 import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.api.{Constants, PartitionSpec, TilingUtils}
@@ -501,7 +508,8 @@ class DynamoDBKVStoreImpl(rawDynamoDbClient: DynamoDbAsyncClient, conf: Map[Stri
 
   private[aws] def configuredImportTimeout: Duration =
     conf
-      .get(IonPathConfig.IonWriterTimeoutKey)
+      .get(KvUploadTimeoutMsKey)
+      .orElse(conf.get(IonPathConfig.IonWriterTimeoutKey))
       .map(timeoutMillis => Duration.ofMillis(timeoutMillis.toLong))
       .getOrElse(DynamoImportDefaultTimeout)
 
@@ -710,7 +718,7 @@ object DynamoDBKVStoreConstants {
 
   val DataTTLSeconds = 5.days.toSeconds.toInt
   val MillisPerDay = 1.day.toMillis
-  val DynamoImportDefaultTimeout: Duration = Duration.ofMinutes(30)
+  val DynamoImportDefaultTimeout: Duration = Duration.ofMinutes(60)
 
   val BatchTableGCAgeDays = 30
   val BatchTableGCMaxDelete = 10
