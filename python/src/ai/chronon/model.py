@@ -171,6 +171,7 @@ def Model(
     environments: Optional[List[str]] = None,
     partition_interval: Optional[Union[common.Window, str]] = None,
     partition_offset: Optional[Union[common.Window, str]] = None,
+    workflow_concurrency: Optional[int] = None,
 ) -> ttypes.Model:
     """
     Creates a Model object for ML model inference and orchestration.
@@ -221,6 +222,11 @@ def Model(
     :param partition_offset:
         Offset from UTC midnight/epoch for the output partition grid.
     :type partition_offset: Optional[Union[common.Window, str]]
+    :param workflow_concurrency:
+        Default maximum number of workflow steps Hub may allocate concurrently
+        when a workflow is started from this Model. Request-level overrides take
+        precedence.
+    :type workflow_concurrency: int
     :return:
         A Model object
     """
@@ -248,8 +254,11 @@ def Model(
         tableProperties=table_properties,
         version=version,
         environments=environments,
-        executionInfo=common.ExecutionInfo(outputTableInfo=output_info)
-        if output_info is not None
+        executionInfo=common.ExecutionInfo(
+            outputTableInfo=output_info,
+            workflowConcurrency=workflow_concurrency,
+        )
+        if output_info is not None or workflow_concurrency is not None
         else None,
     )
 
@@ -299,6 +308,7 @@ def ModelTransforms(
     table_properties: Optional[Dict[str, str]] = None,
     tags: Optional[Dict[str, str]] = None,
     environments: Optional[List[str]] = None,
+    workflow_concurrency: Optional[int] = None,
 ) -> ttypes.ModelTransforms:
     """
     ModelTransforms allows taking the output of existing sources (Event/Entity/Join) and
@@ -319,6 +329,9 @@ def ModelTransforms(
      - tags: Additional metadata tags
      - environments: List of environments where this ModelTransforms should be deployed/available.
         Defaults to ['prod']. Valid values: 'prod', 'canary' (case-insensitive).
+     - workflow_concurrency: Default maximum number of workflow steps Hub may
+       allocate concurrently when a workflow is started from this ModelTransforms
+       config. Request-level overrides take precedence.
     """
     # `environments` is left unset (None) when the author doesn't specify it.
     # Downstream consumers (e.g. hub schedule-all) default the missing/empty
@@ -347,6 +360,9 @@ def ModelTransforms(
         tableProperties=table_properties,
         version=str(version),
         environments=environments,
+        executionInfo=common.ExecutionInfo(workflowConcurrency=workflow_concurrency)
+        if workflow_concurrency is not None
+        else None,
     )
 
     model_transforms = ttypes.ModelTransforms(

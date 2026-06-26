@@ -368,6 +368,7 @@ def Join(
     environments: Optional[List[str]] = None,
     partition_interval: Optional[Union[common.Window, str]] = None,
     partition_offset: Optional[Union[common.Window, str]] = None,
+    workflow_concurrency: Optional[int] = None,
 ) -> api.Join:
     """
     Construct a join object. A join can pull together data from various GroupBy's both offline and online. This is also
@@ -486,6 +487,11 @@ def Join(
         List of environments where this join should be deployed/available.
         Defaults to ['prod']. Valid values: 'prod', 'canary' (case-insensitive).
     :type environments: List[str]
+    :param workflow_concurrency:
+        Default maximum number of workflow steps Hub may allocate concurrently
+        when a workflow is started from this Join. Request-level overrides take
+        precedence.
+    :type workflow_concurrency: int
     """
     # Normalize row_ids
     if isinstance(row_ids, str):
@@ -601,6 +607,7 @@ def Join(
             partition_offset=partition_offset,
             schedule=offline_schedule,
         ),
+        workflowConcurrency=workflow_concurrency,
     )
 
     output_info = exec_info.outputTableInfo

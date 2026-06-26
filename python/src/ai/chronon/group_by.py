@@ -514,6 +514,7 @@ def GroupBy(
     environments: Optional[List[str]] = None,
     partition_interval: Optional[Union[common.Window, str]] = None,
     partition_offset: Optional[Union[common.Window, str]] = None,
+    workflow_concurrency: Optional[int] = None,
 ) -> ttypes.GroupBy:
     """
 
@@ -662,6 +663,10 @@ def GroupBy(
         List of environments where this GroupBy should be deployed/available.
         Defaults to ['prod']. Valid values: 'prod', 'canary' (case-insensitive).
     :type environments: List[str]
+    :param workflow_concurrency:
+        Default maximum number of workflow steps Hub may allocate concurrently
+        when a workflow is started from this GroupBy. Request-level overrides
+        take precedence.
     :return:
         A GroupBy object containing specified aggregations.
     """
@@ -760,6 +765,7 @@ def GroupBy(
             partition_offset=partition_offset,
             schedule=offline_schedule,
         ),
+        workflowConcurrency=workflow_concurrency,
     )
 
     column_tags = {}

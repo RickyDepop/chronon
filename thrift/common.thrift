@@ -170,6 +170,7 @@ struct ExecutionInfo {
     14: optional TableInfo outputTableInfo
     15: optional bool enableStatsCompute
     16: optional string onlineSchedule
+    17: optional i32 workflowConcurrency
 
     200: optional list<KvDependency> kvDependencies
     201: optional KvInfo outputKvInfo
