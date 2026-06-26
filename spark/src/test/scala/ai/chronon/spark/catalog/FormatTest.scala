@@ -281,6 +281,7 @@ class FormatTest extends SparkTestBase {
     val threeHourly = PartitionSpec("ds", "yyyy-MM-dd-HH-mm", 3 * 60 * 60 * 1000)
     Format.zeroParsedPartitionsWarning("db.t", List.empty, threeHourly) shouldBe empty
     Format.zeroParsedPartitionsWarning("db.t", List("2026-06-03-03-00"), threeHourly) shouldBe empty
+    Format.zeroParsedPartitionsWarning("db.t", List("2024-03-02 00%3A00%3A00"), PartitionSpec.daily) shouldBe empty
     // one parseable ds among garbage means the table is usable; per-value failures
     // surface later as loud ParseExceptions instead
     Format.zeroParsedPartitionsWarning("db.t", List("garbage", "2026-06-03-03-00"), threeHourly) shouldBe empty

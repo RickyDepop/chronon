@@ -143,10 +143,8 @@ class TableUtils(@transient val sparkSession: SparkSession, partitionSpecOverrid
             s"Getting partitions for ${tableName} with partitionColumnName ${effectivePartColumn} and subpartitions: ${subPartitionsFilter}")
           val catalogPartitions =
             format.primaryPartitions(tableName, effectivePartColumn, rangeWheres, subPartitionsFilter)(sparkSession)
-          // clustered tables have no catalog partitions but real logical ones: fall back to
-          // the distinct values of the partition column so compute planning sees the data that
-          // exists instead of recomputing fully-populated tables (sub-partition filters can't
-          // be honored on this path, so it only fires without them)
+          // Some tables do not expose catalog partitions. In that case, use the distinct
+          // values in the partition column. Sub-partition filters are not supported there.
           if (catalogPartitions.nonEmpty || subPartitionsFilter.nonEmpty) catalogPartitions
           else format.scanDistinctPartitions(tableName, effectivePartColumn, rangeWheres)(sparkSession)
         }
@@ -173,13 +171,15 @@ class TableUtils(@transient val sparkSession: SparkSession, partitionSpecOverrid
     }
   }
 
-  /** Listed ds values are normalized to the global spec's format only when the grids match (the
-    * legacy yyyyMMdd-table-under-yyyy-MM-dd-global case, which long-standing callers expect);
-    * values on a different grid stay in their own spec - translating them into a coarser
-    * global spec would floor them and collapse distinct partitions into one.
+  /** Return listed partitions in the default format only when doing so keeps the same partition
+    * boundaries. Different-width partitions stay in their own format.
     */
   private def toGlobalFormat(value: String, tableSpec: PartitionSpec): String =
-    if (tableSpec.hasSameGrid(partitionSpec)) tableSpec.translate(value, partitionSpec) else value
+    if (tableSpec.hasSameGrid(partitionSpec))
+      tableSpec.parseCatalogPartition(value).map(tableSpec.translate(_, partitionSpec)).getOrElse {
+        tableSpec.translate(value, partitionSpec)
+      }
+    else value
 
   def maxTimestampDate(tableName: String,
                        timestampColumn: String,
@@ -190,22 +190,19 @@ class TableUtils(@transient val sparkSession: SparkSession, partitionSpecOverrid
       .flatMap(_.maxTimestampDate(tableName, timestampColumn, effectiveSpec)(sparkSession))
   }
 
-  /** The table's last partition ds (in its own spec - no translation shim) and the
-    * exclusive epoch upper bound of the time its data holds. Completeness questions are
-    * answered by comparing epoch millis - spec-free - rather than by comparing ds values
-    * across specs.
-    *
-    * Cost contract: readiness checks must stay metadata-fast. This is ONE catalog-metadata
-    * read; the value scan inside Format.lastAvailablePartition only fires for tables with no
-    * catalog partitions at all (clustered / timestamp-backed), where a query is the only
-    * possible signal. The millis arithmetic is local.
+  /** Returns the last listed partition and the time just after that partition ends.
+    * Most tables answer this from catalog metadata. Tables without catalog partitions may
+    * need one query over the partition column.
     */
   def dataWatermark(tableName: String, tableSpec: Option[PartitionSpec] = None): Option[(String, Long)] = {
     val spec = tableSpec.getOrElse(partitionSpec)
     tableFormatProvider
       .readFormat(tableName)
       .flatMap(_.lastAvailablePartition(tableName, spec.column, spec)(sparkSession))
-      .map(value => (value, spec.partitionEndMillis(value)))
+      .map { value =>
+        val partition = spec.parseCatalogPartition(value).getOrElse(value)
+        (partition, spec.partitionEndMillis(partition))
+      }
   }
 
   def dataWatermarkMillis(tableName: String, tableSpec: Option[PartitionSpec] = None): Option[Long] =
@@ -215,7 +212,7 @@ class TableUtils(@transient val sparkSession: SparkSession, partitionSpecOverrid
     try {
       dataWatermarkMillis(table, tableSpec) match {
         case Some(watermark) =>
-          // maxMillis is inclusive-millis; the watermark is exclusive
+          // The table end is exclusive; range.maxMillis is inclusive.
           val covers = watermark > range.maxMillis
           if (!covers) {
             logger.info(
@@ -478,8 +475,7 @@ class TableUtils(@transient val sparkSession: SparkSession, partitionSpecOverrid
            |""".stripMargin
       )
 
-      // firstAvailablePartition normalizes grid-matching ds values to the global format, so
-      // the shift must use the spec the value actually arrives in
+      // Shift using the format returned by firstAvailablePartition.
       val autoSpec =
         if (outputPartitionRange.partitionSpec.hasSameGrid(partitionSpec)) partitionSpec
         else outputPartitionRange.partitionSpec

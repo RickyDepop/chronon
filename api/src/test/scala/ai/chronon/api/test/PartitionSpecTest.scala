@@ -179,6 +179,16 @@ class PartitionSpecTest extends AnyFlatSpec with Matchers {
     dailySpec.canonical("2024-01-02") should be(Some("2024-01-02"))
   }
 
+  it should "read midnight timestamp strings only for catalog partition values" in {
+    an[ParseException] should be thrownBy dailySpec.epochMillis("2024-03-02 00:00:00")
+    dailySpec.parseCatalogPartition("2024-03-02 00:00:00") should be(Some("2024-03-02"))
+    dailySpec.parseCatalogPartition("2024-03-02 00%3A00%3A00") should be(Some("2024-03-02"))
+    compactSpec.parseCatalogPartition("2024-03-02 00:00:00") should be(Some("20240302"))
+    dailySpec.parseCatalogPartition("2024-03-02 01:00:00") should be(None)
+    dailySpec.parseCatalogPartition("2024-02-30 00:00:00") should be(None)
+    threeHourSpec.parseCatalogPartition("2024-03-02 00:00:00") should be(None)
+  }
+
   "PartitionSpec date arithmetic" should "work correctly with yyyyMMdd format" in {
     compactSpec.after("20251125") should be("20251126")
     compactSpec.before("20251201") should be("20251130")

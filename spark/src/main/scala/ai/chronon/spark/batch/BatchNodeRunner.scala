@@ -123,10 +123,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
       return retryTriggerExpr(0)
     }
 
-    // Case 2: Has partition column — unified check on epoch millis: the data watermark must
-    // pass the last millisecond of the required input range. Works for gap-free Hive, gappy
-    // Hive, Iceberg hidden partitions, timestamp columns — and across partitionIntervals and
-    // formats without ds translation.
+    // A partitioned input is ready after its last partition covers the required range.
     if (hasPartitionColumn) {
       val spec = tableInfo.partitionSpec(tableUtils.partitionSpec)
       @tailrec
@@ -564,7 +561,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
     val outputTablePartitionSpec = metadata.partitionSpec(tableUtils.partitionSpec)
     val outputTable = metadata.executionInfo.outputTableInfo.table
 
-    // completeness is validated on epoch millis - spec-free, no cross-format ds comparison
+    // Validate by time, not by formatted partition strings.
     val watermark = tableUtils.dataWatermarkMillis(outputTable, Some(outputTablePartitionSpec))
     val requiredEndMillis = range.maxMillis
 
@@ -611,10 +608,8 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
                                   requiredEndMillis: Long,
                                   semanticHash: Option[String])
 
-  /** Computes partition statuses for input tables: ready when the table's data watermark has
-    * passed the required input range's last millisecond. Works uniformly for gap-free and gappy
-    * Hive, Iceberg, timestamp columns - and across partitionIntervals and formats without ds
-    * translation.
+  /** Computes input-table statuses for this step.
+    * An input is ready when its data extends past the end of the range this step needs.
     */
   private[batch] def computeInputTablePartitionStatuses(
       metadata: MetaData,
@@ -633,13 +628,12 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
     inputTableDependencies
       .filterNot(_._2.forall(td => td.isSetIsSoftNodeDependency && td.isSoftNodeDependency))
       .flatMap { case (table, deps) =>
-        // readiness compares epoch watermarks - spec-free, so a sub-daily node over a
-        // daily (or differently-formatted) input needs no ds translation at all
+        // Compare times, not formatted partition strings.
         val requiredEndsMillis = deps
           .flatMap { td =>
             DependencyResolver
               .computeInputRange(range, td)
-              // start may be unbounded (null) - only the end partition's last millisecond matters here
+              // Only the range end matters for "is enough input data available?"
               .map(_.maxMillis)
           }
           .toSeq
@@ -652,9 +646,9 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
 
           val firstPartition =
             tableUtils.firstAvailablePartition(table, partitionSpec = inputPartitionSpec)
-          // one metadata read answers both the display value and readiness
+          // Use the same table end for display and for the ready check.
           val watermark = tableUtils.dataWatermark(table, Some(inputPartitionSpec))
-          // diagnostics keep the historical global-format presentation for same-grid tables
+          // Keep the old display format when the partition boundaries match.
           val lastPartition = watermark.map { case (value, _) =>
             if (inputPartitionSpec.hasSameGrid(tableUtils.partitionSpec))
               inputPartitionSpec.translate(value, tableUtils.partitionSpec)

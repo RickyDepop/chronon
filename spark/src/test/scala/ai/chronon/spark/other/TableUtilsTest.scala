@@ -954,4 +954,26 @@ class TableUtilsTest extends AnyFlatSpec {
     spark.sql(s"DROP TABLE IF EXISTS $tableName")
   }
 
+  it should "read daily catalog partitions that are returned as timestamps" in {
+    import spark.implicits._
+    val tableName = "db.timestamp_shaped_daily_partitions"
+    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    spark.sql(s"DROP TABLE IF EXISTS $tableName")
+    Seq(("2024-03-02 00:00:00", "a"), ("2024-03-03 00:00:00", "b"))
+      .toDF("ds", "id")
+      .write
+      .partitionBy("ds")
+      .saveAsTable(tableName)
+
+    assertEquals(Some("2024-03-02"), tableUtils.firstAvailablePartition(tableName))
+    assertEquals(Some("2024-03-03"), tableUtils.lastAvailablePartition(tableName))
+    assertEquals(
+      PartitionSpec.daily.epochMillis("2024-03-04"),
+      tableUtils.dataWatermarkMillis(tableName).get
+    )
+    assertTrue(tableUtils.tableCoversRange(tableName, PartitionRange("2024-03-02", "2024-03-03")))
+
+    spark.sql(s"DROP TABLE IF EXISTS $tableName")
+  }
+
 }

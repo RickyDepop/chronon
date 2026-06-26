@@ -19,10 +19,13 @@ package ai.chronon.api
 import ai.chronon.api.Extensions._
 import org.apache.commons.lang3.time.FastDateFormat
 
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import java.text.{ParseException, ParsePosition, SimpleDateFormat}
-import java.time.Instant
+import java.time.{Instant, LocalDateTime, LocalTime}
 import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
+import java.time.format.{DateTimeFormatter, DateTimeFormatterBuilder, ResolverStyle}
+import java.time.temporal.ChronoField
 import java.util.{Calendar, Locale, TimeZone}
 import scala.collection.mutable.ListBuffer
 import scala.util.Try
@@ -237,12 +240,33 @@ case class PartitionSpec(column: String, format: String, spanMillis: Long, offse
     targetSpec.at(millis)
   }
 
-  /** This ds value re-rendered canonically when it parses fully and starts a grid interval; None
-    * otherwise. Lookup paths use it to admit externally-stored partition values (normalizing
-    * padding quirks) without ever letting an off-boundary value into range math.
+  /** Returns this value in the spec's standard format when it is exactly on a partition boundary.
     */
   def canonical(value: String): Option[String] =
     Try(epochMillis(value)).toOption.filter(ms => grid.leftBound(ms) == ms).map(at)
+
+  /** Some catalogs return daily partitions as `2024-03-02 00:00:00`.
+    * Treat midnight timestamp strings as daily dates only when reading catalog values.
+    */
+  def parseCatalogPartition(value: String): Option[String] = {
+    if (value == null) return None
+    val decoded =
+      Try(URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8.name())).getOrElse(value)
+    Seq(value, decoded).distinct.iterator
+      .flatMap { candidate =>
+        Try(epochMillis(candidate)).toOption.orElse {
+          if (isDaily) {
+            Try(LocalDateTime.parse(candidate, PartitionSpec.DailyTimestampFormatter)).toOption
+              .filter(_.toLocalTime == LocalTime.MIDNIGHT)
+              .map(_.toInstant(ZoneOffset.UTC).toEpochMilli)
+          } else {
+            None
+          }
+        }
+      }
+      .find(ms => grid.leftBound(ms) == ms)
+      .map(at)
+  }
 
   /** Normalizes a start value by translating from the fallback spec's interval start when needed. */
   def normalizeStart(partition: String, fallbackSpec: PartitionSpec): String = {
@@ -278,6 +302,14 @@ object PartitionSpec {
     1706745600000L, // 2024-02-01T00:00:00Z - month rollover
     1735689600000L // 2025-01-01T00:00:00Z - year rollover
   )
+
+  private val DailyTimestampFormatter: DateTimeFormatter = new DateTimeFormatterBuilder()
+    .appendPattern("uuuu-MM-dd HH:mm:ss")
+    .optionalStart()
+    .appendFraction(ChronoField.NANO_OF_SECOND, 1, 9, true)
+    .optionalEnd()
+    .toFormatter(Locale.US)
+    .withResolverStyle(ResolverStyle.STRICT)
 
   def validate(column: String, format: String, spanMillis: Long, offsetMillis: Long = 0L): Unit = {
     val grid = PartitionGrid(spanMillis, offsetMillis)

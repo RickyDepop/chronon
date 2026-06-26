@@ -349,16 +349,14 @@ object Format {
 
   private val stringOrdering: Ordering[String] = Ordering.String
 
-  /** Composition-mismatch canary: a table whose listing is nonempty but parses to ZERO ds
-    * values under the reader's spec reads as permanently empty downstream - sensors never fire,
-    * silently. One value parsing is enough to clear the canary; per-value mismatches surface
-    * later as loud ParseExceptions in range arithmetic. Sampled so huge listings stay cheap.
+  /** Warns when a table has partitions but none match the format Chronon expects.
+    * Sample a few values so large tables stay cheap to inspect.
     */
   def zeroParsedPartitionsWarning(tableName: String, partitions: Seq[String], spec: PartitionSpec): Option[String] = {
     if (partitions.isEmpty) None
     else {
       val sample = partitions.take(100)
-      if (sample.exists(value => Try(spec.epochMillis(value)).isSuccess)) None
+      if (sample.exists(value => spec.parseCatalogPartition(value).nonEmpty)) None
       else
         Some(
           s"Table $tableName listed ${partitions.size} partitions but none of the first ${sample.size} parse under " +
